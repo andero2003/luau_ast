@@ -1,21 +1,23 @@
 type TokenType = "SYMBOL" | "KEYWORD" | "NUMBER" | "STRING" | "IDENTIFIER" | "EOF"
 
+local _tokenClass = {}
+_tokenClass.__index = _tokenClass
+
+function _tokenClass.new(type: TokenType, value: any, line: number, column: number)
+    return setmetatable({
+        type = type,
+        value = value,
+        line = line,
+        column = column
+    }, _tokenClass)
+end
+
+function _tokenClass:__tostring()
+    return string.format("Token<%s>(%s)", self.type, self.value or '')
+end
+
 return {
-    Token = {
-        __index = {
-            new = function(self, type: TokenType, value: any, line: number, column: number)
-                return setmetatable({
-                    type = type,
-                    value = value,
-                    line = line,
-                    column = column
-                }, self)
-            end,
-            __tostring = function(self)
-                return string.format("Token<%s>(%s)", self.type, self.value or '')
-            end
-        }
-    },
+    Token = _tokenClass,
     Tokens = {
         KEYWORD = {
             DO = "do",

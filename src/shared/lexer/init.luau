@@ -22,7 +22,7 @@ function Lexer:advance()
 end
 
 function Lexer:tokenize()
-    while self.pos <= #self.source do
+    while self.pos < #self.source do
         local char = self.source:sub(self.pos, self.pos)
         if char == " " then
             self:advance()
@@ -34,17 +34,38 @@ function Lexer:tokenize()
             self:identifier()
         elseif char:match("%d") then
             self:number()
-        elseif char:match("[%+%-%*/%%^#=<>~]") then
+        elseif char:match("%s") then
+            self:advance()
+        elseif char == '-' and self:peekNextChar() == '-' then
+            -- Ignore comments
+            if self:peekNextChar(2) == '[' then
+                local start = self.pos
+                while self.source:sub(self.pos, self.pos + 1) ~= "]]" do
+                    self:advance()
+                end
+                self:advance()
+                self:advance()
+            else
+                while self.source:sub(self.pos, self.pos) ~= "\n" do
+                    self:advance()
+                end    
+            end
+        elseif char:match("[+%-%*/%%%^#=<>()%[%]{};:,%.]") then
             self:symbol()           
         elseif char == "\"" or char == "\'" then
             self:string()
-            -- TODO Add interpolation
+            -- TODO Add interpolation and multi-line strings
         else
             error("Unexpected character: " .. char .. " at line " .. self.line .. " column " .. self.column)
         end
     end
 
     table.insert(self.tokens, Token.new("EOF", nil, self.line, self.column))
+end
+
+function Lexer:peekNextChar(offset)
+    offset = offset or 1
+    return self.source:sub(self.pos + offset, self.pos + offset)
 end
 
 function Lexer:identifier()
@@ -57,7 +78,7 @@ function Lexer:identifier()
     local tokenType = "IDENTIFIER"
     for tokenName, val in Tokens.KEYWORD do
         if val == value then
-            tokenType = tokenName
+            tokenType = "KEYWORD<" .. tokenName .. ">"
             break
         end
     end
@@ -85,7 +106,7 @@ function Lexer:symbol()
     -- Check if the symbol is a recognized symbol
     for tokenName, val in Tokens.SYMBOL do
         if val == value then
-            table.insert(self.tokens, Token.new(tokenName, value, self.line, self.column))
+            table.insert(self.tokens, Token.new("SYMBOL<" .. tokenName .. ">", value, self.line, self.column))
             return
         end
     end
