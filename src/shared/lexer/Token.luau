@@ -41,6 +41,9 @@ return {
             TRUE = "true",
             FALSE = "false",
             NIL = "nil",
+            AND = "and",
+            OR = "or",
+            NOT = "not",
         },
 
         SYMBOL = {
@@ -68,12 +71,16 @@ return {
             COLON = ":",
             COMMA = ",",
             DOT = ".",
-            DOTDOT = "..",
-            DOTDOTDOT = "...",
-            AND = "and",
-            OR = "or",
-            NOT = "not",
+            SPREAD = "...",
             CONCAT = "..",
+            ADD_ASSIGN = "+=",
+            SUB_ASSIGN = "-=",
+            MUL_ASSIGN = "*=",
+            DIV_ASSIGN = "/=",
+            MOD_ASSIGN = "%=",
+            POW_ASSIGN = "^=",
+            CONCAT_ASSIGN = "..=",
+            RET_TYPE = "->",
         }
     }
 }
