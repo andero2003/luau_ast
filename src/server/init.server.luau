@@ -1,4 +1,5 @@
 local Lexer = require(game.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("lexer"))
+local Parser = require(game.ReplicatedStorage:WaitForChild("Shared"):WaitForChild("parser"))
 
 local source = [[
     function thisIsSomething<GENERIC>(test: string, ...)
@@ -23,7 +24,9 @@ local source = [[
 local source2 = [[
     local myClass = {}
     myClass.__index = myClass
+]]
 
+--[[
     function myClass.new()
         return setmetatable({}, myClass)
     end
@@ -41,3 +44,7 @@ local source2 = [[
 local lexer = Lexer.new(source2)
 lexer:tokenize()
 print(lexer.tokens)
+
+local parser = Parser.new(lexer.tokens)
+local ast = parser:parseBlock()
+print(ast)

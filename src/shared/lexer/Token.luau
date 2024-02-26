@@ -73,6 +73,7 @@ return {
             DOT = ".",
             SPREAD = "...",
             CONCAT = "..",
+            CAST = "::",
             ADD_ASSIGN = "+=",
             SUB_ASSIGN = "-=",
             MUL_ASSIGN = "*=",

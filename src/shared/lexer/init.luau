@@ -184,7 +184,7 @@ function Lexer:symbol()
         return nil, 0
     end
 
-    local symbol, symbolLength = checkCompoundSymbol(compoundSymbols)
+    local symbol, symbolLength = checkCompoundSymbol(compoundSymbolsSorted)
     if symbol then
         table.insert(self.tokens, Token.new("SYMBOL<" .. symbol .. ">", Tokens.SYMBOL[symbol], self.line, self.column))
         self:advance(symbolLength) -- Advance by the length of the compound symbol
