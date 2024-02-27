@@ -22,10 +22,12 @@ end
 
 function Parser:parseBlock()
     local statements = {}
-    while self.pos <= #self.tokens do
+    while self.pos < #self.tokens do
         local statement = self:parseStatement()
         if statement then
             table.insert(statements, statement)
+        else
+            break
         end
         if self:match("SYMBOL<SEMICOLON>") then
             self:advance()
@@ -40,6 +42,10 @@ function Parser:match(type)
         self:advance()
         return token
     end
+end
+
+function Parser:peek()
+    return self.tokens[self.pos + 1]
 end
 
 function Parser:parseStatement()
@@ -77,8 +83,10 @@ function Parser:parseStatement()
     if lastStatement then
         return lastStatement
     end
-    print(self.tokens[self.pos])
-    return error("Unexpected token: " .. self.tokens[self.pos].type)
+    if self:match('EOF') then
+        return
+    end
+    return
 end
 
 function Parser:parseDoStatement()
@@ -93,6 +101,40 @@ function Parser:parseWhileStatement()
     local block = self:parseBlock()
     self:match("KEYWORD<END>")
     return { type = "WHILE_STATEMENT", condition = condition, block = block }
+end
+
+-- 'for' binding '=' exp ',' exp [',' exp] 'do' block 'end' |
+-- 'for' bindinglist 'in' explist 'do' block 'end' |
+function Parser:parseForStatement()
+    local binding = self:parseBinding()
+    if self:match("SYMBOL<ASSIGN>") then
+        local start = self:parseExpression()
+        self:match("SYMBOL<COMMA>")
+        local endValue = self:parseExpression()
+        local step
+        if self:match("SYMBOL<COMMA>") then
+            step = self:parseExpression()
+        end
+        self:match("KEYWORD<DO>")
+        local block = self:parseBlock()
+        self:match("KEYWORD<END>")
+        return { type = "NUMERIC_FOR_STATEMENT", binding = binding, start = start, endValue = endValue, step = step, block = block }
+    end    
+    --Check for bindinglist
+    local bindingList = { binding }
+    while self:match("SYMBOL<COMMA>") do
+        table.insert(bindingList, self:parseBinding())
+    end
+    self:match("KEYWORD<IN>")
+    local expression = self:parseExpression()
+    local expressions = { expression }
+    while self:match("SYMBOL<COMMA>") do
+        table.insert(expressions, self:parseExpression())
+    end
+    self:match("KEYWORD<DO>")
+    local block = self:parseBlock()
+    self:match("KEYWORD<END>")
+    return { type = "GENERIC_FOR_STATEMENT", binding = binding, expressions = expressions, block = block }
 end
 
 function Parser:parseAssignmentOrCallStatement()
@@ -186,8 +228,7 @@ function Parser:parseReturnStatement()
 end
 
 function Parser:parseLocalDeclaration()
-    self:match("KEYWORD<LOCAL>")
-    local name = self:match("KEYWORD<IDENTIFIER>")
+    local name = self:match("IDENTIFIER")
     if name then
         return self:parseLocalVariableDeclarationOrBindingList(name)    
     end
@@ -202,7 +243,7 @@ function Parser:parseLocalFunctionDeclaration(name)
 end
 
 function Parser:parseBinding()
-    local name = self:match("KEYWORD<IDENTIFIER>")
+    local name = self:match("IDENTIFIER")
     if self:match("SYMBOL<COLON>") then
         local type = self:parseType()
         return {type = "TYPED_BINDING", name = name, valueType = type}
@@ -220,12 +261,13 @@ end
 
 function Parser:parseLocalVariableDeclarationOrBindingList(name)
     if self:match("SYMBOL<ASSIGN>") then
+        print("local variable declaration")
         local value = self:parseExpression()
         return { type = "LOCAL_VARIABLE_DECLARATION", name = name.value, value = value }
     end
     local names = { name.value }
     while self:match("SYMBOL<COMMA>") do
-        local name = self:match("KEYWORD<IDENTIFIER>")
+        local name = self:match("IDENTIFIER")
         if name then
             table.insert(names, name.value)
         end
@@ -245,6 +287,7 @@ function Parser:getPreviousToken()
 end
 
 function Parser:parseSimpleExpression()
+    print('Simple expression')
     if self:match("NUMBER") then
         return { type = "NUM_LITERAL", value = self:getPreviousToken().value }
     end
@@ -263,14 +306,15 @@ function Parser:parseSimpleExpression()
     if self:match("SYMBOL<SPREAD") then
         return { type = "VAR_ARGS" }
     end
-    if self:match("SYMBOL<LBRACKET>") then
+    if self:match("SYMBOL<LBRACE>") then
+        print('parsing table constructor')
         return self:parseTableConstructor()
     end
     if self:match("KEYWORD<FUNCTION>") then
         return self:parseFunctionExpression()
     end
-    if self:match("KEYWORD<IDENTIFIER>") then
-        return self:parseIdentifierOrCallExpression()
+    if self:match("IDENTIFIER") then
+        return self:parsePrefixExpression()
     end
     if self:match("KEYWORD<IF") then
         return self:parseIfElseExpression()
@@ -284,22 +328,7 @@ function Parser:parseSimpleExpression()
 end
 
 function Parser:parseVariable()
-    local name = self:match("KEYWORD<IDENTIFIER>")
-    if name then
-        return { type = "VARIABLE", name = name.value }
-    end
-    local prefixExp = self:parsePrefixExpression()
-    if self:match("SYMBOL<LBRACKET") then
-        local expression = self:parseExpression()
-        self:match("SYMBOL<RBRACKET>")
-        return { type = "TABLE_ACCESS", prefixExp = prefixExp, expression = expression }
-    end
-    if self:match("SYMBOL<DOT>") then
-        local field = self:match("KEYWORD<IDENTIFIER>")
-        if field then
-            return { type = "FIELD_ACCESS", prefixExp = prefixExp, field = field.value }
-        end
-    end
+
 end
 
 function Parser:parsePrefixExpression()
@@ -308,40 +337,21 @@ function Parser:parsePrefixExpression()
         self:match("SYMBOL<RPAREN>")
         return expression
     end
-    local pos = self.pos
-    local funcCall = self:parseFunctionCall()
-    if funcCall then
-        return funcCall
-    end
-    self.pos = pos
-    return self:parseVariable()
-end
-
-function Parser:parseFunctionCall()
-    local prefixExp = self:parsePrefixExpression()
-    if self:match("SYMBOL<COLON>") then
-        local method = self:match("KEYWORD<IDENTIFIER>")
-        if method then
-            local args = self:parseFunctionArgs()
-            return { type = "METHOD_CALL", prefixExp = prefixExp, method = method.value, args = args }
-        end
-    end
-    local args = self:parseFunctionArgs()
-    return { type = "FUNCTION_CALL", prefixExp = prefixExp, args = args }
+    -- Variable or function call
 end
 
 function Parser:parseFunctionName()
-    local name = self:match("KEYWORD<IDENTIFIER>")
+    local name = self:match("IDENTIFIER")
     if name then
         local fields = {}
         while self:match("SYMBOL<DOT>") do
-            local field = self:match("KEYWORD<IDENTIFIER>")
+            local field = self:match("IDENTIFIER")
             if field then
                 table.insert(fields, field.value)
             end
         end
         if self:match("SYMBOL<COLON>") then
-            local method = self:match("KEYWORD<IDENTIFIER>")
+            local method = self:match("IDENTIFIER")
             if method then
                 table.insert(fields, method.value)
             end
@@ -353,15 +363,16 @@ end
 function Parser:parseFunctionBody()
     local generics, returnType
     if self:match("SYMBOL<LT>") then
-        generics = self:parseGenericTypeList()
+        generics = {} --self:parseGenericTypeList()
     end
     self:match("SYMBOL<LPAREN>")
-    local parameters = self:parseParameterList()
+    local parameters = {} -- self:parseParameterList()
     self:match("SYMBOL<RPAREN>")
     if self:match("SYMBOL<COLON>") then
-        returnType = self:parseReturnType()
+        returnType = {} -- self:parseReturnType()
     end
     local block = self:parseBlock()
+    print('parsed function body', self.tokens[self.pos])
     self:match("KEYWORD<END>")
     return { type = "FUNCTION_BODY", parameters = parameters, block = block, generics = generics, returnType = returnType }
 end
@@ -386,7 +397,8 @@ end
 
 function Parser:parseTableConstructor()
     local fields = {}
-    while not self:match("SYMBOL<RBRACKET>") do
+    while not self:match("SYMBOL<RBRACE>") do
+        print('parsing field')
         local field = self:parseField()
         table.insert(fields, field)
         if not self:match("SYMBOL<COMMA>") or not self:match("SYMBOL<SEMICOLON>") then
@@ -404,7 +416,7 @@ function Parser:parseField()
         local value = self:parseExpression()
         return { type = "KEY_VALUE_FIELD", key = key, value = value }
     end
-    if self:match("KEYWORD<IDENTIFIER>") then
+    if self:match("IDENTIFIER") then
         local key = self:getPreviousToken()
         if self:match("SYMBOL<ASSIGN>") then
             local value = self:parseExpression()
