@@ -77,6 +77,7 @@ function Parser:parseStatement()
         return self:parseDoStatement()
     end
     if self:match("IDENTIFIER") then
+        self:advance(-1)
         return self:parseAssignmentOrCallStatement()
     end
     local lastStatement = self:parseLastStatement()
@@ -138,17 +139,21 @@ function Parser:parseForStatement()
 end
 
 function Parser:parseAssignmentOrCallStatement()
+    --TODO check for function call
     local pos = self.pos
-    local funcCall = self:parseFunctionCall()
-    if funcCall then
-        return funcCall
+    local var = self:parseVariable()
+    if var.type == "METHOD_CALL" or self.tokens[self.pos].type == 'SYMBOL<LPAREN>' then
+        local args = self:parseFunctionArgs()
+        return { type = "FUNCTION_CALL", prefix = var, args = args }
     end
     self.pos = pos
     return self:parseAssignmentStatement()
 end
 
 function Parser:parseAssignmentStatement()
+    print('parsing assignment statement')
     local variable = self:parseVariable()
+    print('parsed variable', variable)
     if self:matchCompoundOperator() then
         local operator = self:getPreviousToken()
         local expression = self:parseExpression()
@@ -159,7 +164,9 @@ function Parser:parseAssignmentStatement()
         table.insert(variables, self:parseVariable())
     end
     self:match("SYMBOL<ASSIGN>")
-    local expressions = { self:parseExpression() }
+    local exp = self:parseExpression()
+    print('parsed expression', exp)
+    local expressions = { exp }
     while self:match("SYMBOL<COMMA>") do
         table.insert(expressions, self:parseExpression())
     end
@@ -273,10 +280,12 @@ function Parser:parseLocalVariableDeclarationOrBindingList(name)
         end
     end
     if self:match("SYMBOL<ASSIGN>") then
-        local values = { self:parseExpression() }
-        while self:match("SYMBOL<COMMA>") do
-            table.insert(values, self:parseExpression())
-        end
+        local values = { }
+        repeat
+            local exp = self:parseExpression()
+            print('parsed expression', exp)
+            table.insert(values, exp)
+        until not self:match("SYMBOL<COMMA>")
         return { type = "LOCAL_VARIABLE_BINDING_LIST", names = names, values = values }
     end
     return { type = "LOCAL_VARIABLE_DECLARATION", names = names }
@@ -313,9 +322,6 @@ function Parser:parseSimpleExpression()
     if self:match("KEYWORD<FUNCTION>") then
         return self:parseFunctionExpression()
     end
-    if self:match("IDENTIFIER") then
-        return self:parsePrefixExpression()
-    end
     if self:match("KEYWORD<IF") then
         return self:parseIfElseExpression()
     end
@@ -325,10 +331,41 @@ function Parser:parseSimpleExpression()
         return expression
     end
     --TODO string interpolation
+    return self:parsePrefixExpression()
 end
 
 function Parser:parseVariable()
+    local name = self:match("IDENTIFIER")
+    if name then
+        local next = self.tokens[self.pos]
+        if not (next.type == "SYMBOL<DOT>" 
+        or next.type == "SYMBOL<COLON>" 
+        or next.type == "SYMBOL<LBRACKET>"
+        or next.type == "SYMBOL<COMMA>"
+        or next.type == "SYMBOL<LPAREN>")
+        then
+            return { type = "SIMPLE_VARIABLE", name = name.value }
+        end
 
+        while self.tokens[self.pos].type == 'SYMBOL<DOT>' or self.tokens[self.pos].type == 'SYMBOL<LBRACKET>' do
+            if self:match("SYMBOL<DOT>") then
+                local var = self:match("IDENTIFIER")
+                name = { type = "FIELD_VARIABLE", prefix = name, field = var.value }
+            end
+            if self:match("SYMBOL<LBRACKET>") then
+                local expression = self:parseExpression()
+                self:match("SYMBOL<RBRACKET>")
+                name = { type = "INDEX_VARIABLE", prefix = name, expression = expression }
+            end
+        end
+        if self:match("SYMBOL<COLON>") then
+            local method = self:match("IDENTIFIER")
+            if method then
+                return { type = "METHOD_CALL", prefix = name, method = method.value }
+            end
+        end
+        return name
+    end
 end
 
 function Parser:parsePrefixExpression()
@@ -337,7 +374,15 @@ function Parser:parsePrefixExpression()
         self:match("SYMBOL<RPAREN>")
         return expression
     end
-    -- Variable or function call
+   
+    local var = self:parseVariable()
+    if var then
+        if var.type == "METHOD_CALL" or self.tokens[self.pos].type == 'SYMBOL<LPAREN>' then
+            local args = self:parseFunctionArgs()
+            return { type = "FUNCTION_CALL", prefix = var, args = args }
+        end
+        return var
+    end
 end
 
 function Parser:parseFunctionName()
@@ -472,7 +517,13 @@ function Parser:parseExpression()
         end
         return { type = "UNARY_EXPRESSION", operator = unaryOperator, expression = expression }
     end
-    return self:parseAsExpression()
+    local exp = self:parseAsExpression()
+    if self:matchBinaryOperator() then
+        local operator = self:getPreviousToken()
+        local rightExpression = self:parseExpression()
+        return { type = "BINARY_EXPRESSION", operator = operator, left = exp, right = rightExpression }
+    end
+    return exp
 end
 
 function Parser:parseAsExpression()

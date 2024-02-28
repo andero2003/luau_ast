@@ -22,11 +22,10 @@ local source = [[
 ]]
 
 local source2 = [[
-    local myClass = {}
-    myClass.__index = myClass
-]]
+    local a, b = 10, 20
+    local c = a + b
+    c += 10 * a/b
 
---[[
     function myClass.new()
         return setmetatable({}, myClass)
     end
